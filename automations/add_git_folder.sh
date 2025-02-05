@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Check if correct number of arguments is provided
+# Check if at least one argument is provided
 if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <GitHub Repository URL> <Folder Path 1> <Folder Path 2> ... <Folder Path N>"
     exit 1
 fi
 
-# Assigning arguments
+# Assign arguments
 REPO_URL=$1
-shift 1  # Shift the first argument (URL), leaving only the folder paths
+shift 1  # Remove the first argument (GitHub repo URL), leaving only folder paths
 
 # Extract repository name from the URL
 REPO_NAME=$(basename "$REPO_URL" .git)
@@ -20,7 +20,8 @@ if [ ! -d "$REPO_NAME" ]; then
     cd "$REPO_NAME" || exit
 else
     cd "$REPO_NAME" || exit
-    echo "Repository already exists. Using existing repository."
+    echo "Repository already exists. Pulling latest changes..."
+    git pull origin main  # Ensure local repo is up to date
 fi
 
 # Loop over the provided folder paths
@@ -31,32 +32,39 @@ for FOLDER_PATH in "$@"; do
         continue
     fi
 
-    # Create the directory structure in the root of the repository
-    RELATIVE_FOLDER_PATH=$(basename "$FOLDER_PATH")
-    mkdir -p "$RELATIVE_FOLDER_PATH"  # Create the folder in the root directory
+    # Get the folder name without the full path
+    FOLDER_NAME=$(basename "$FOLDER_PATH")
 
-    # Copy the contents of the folder to the created directory in the repo
-    cp -r "$FOLDER_PATH"/* "$RELATIVE_FOLDER_PATH/"
+    # Use rsync to copy while excluding .git directories
+    echo "Copying '$FOLDER_NAME' to the repository root..."
+    rsync -av --progress --exclude='.git' "$FOLDER_PATH" .
 
-    # If the folder is empty, add a .gitkeep file to track the folder
-    if [ "$(ls -A "$FOLDER_PATH")" ]; then
-        echo "Folder '$FOLDER_PATH' is not empty. Adding files to git."
+    # Remove any nested .git directories to prevent submodule issues
+    find "$FOLDER_NAME" -name ".git" -type d -exec rm -rf {} +
+
+    # Ensure permissions are correct
+    chmod -R 755 "$FOLDER_NAME"
+
+    # Check if the folder is empty and add a .gitkeep file if needed
+    if [ -z "$(ls -A "$FOLDER_NAME")" ]; then
+        touch "$FOLDER_NAME/.gitkeep"
+        git add "$FOLDER_NAME/.gitkeep"
+        echo "Folder '$FOLDER_NAME' was empty, added .gitkeep to track it."
     else
-        touch "$RELATIVE_FOLDER_PATH/.gitkeep"
-        git add "$RELATIVE_FOLDER_PATH/.gitkeep"
-        echo "Folder '$FOLDER_PATH' was empty, added .gitkeep to track it."
+        echo "Folder '$FOLDER_NAME' and its subfolders added to Git."
     fi
 
-    # Stage the files for commit
-    git add "$RELATIVE_FOLDER_PATH/*"
+    # Add the folder to Git
+    git add "$FOLDER_NAME"
 done
 
 # Commit the changes
-git commit -m "Added folders and their contents to the root directory"
+git commit -m "Added folders and their subfolders to the root directory"
 
-# Push the changes to the remote repository
+# Push changes to the remote repository
 git push origin main
 
-echo "All folders and their contents have been pushed to the root directory in the repository."
+echo "✅ All folders and their subfolders have been pushed successfully!"
+
 
 
